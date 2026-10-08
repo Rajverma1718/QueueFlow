@@ -138,6 +138,13 @@ def appointments(day: date = Query(default_factory=date.today), db: Session = De
 @app.post("/api/appointments", response_model=AppointmentOut, status_code=201)
 def create_appointment(payload: AppointmentCreate, db: Session = Depends(get_db)):
     if not db.get(Service, payload.service_id): raise HTTPException(404, "Service not found")
+    blocked = db.scalars(select(BlockedSlot).where(
+        BlockedSlot.block_date == payload.appointment_date,
+        BlockedSlot.start_time <= payload.scheduled_time,
+        BlockedSlot.end_time > payload.scheduled_time,
+    )).first()
+    if blocked:
+        raise HTTPException(409, "The selected time is unavailable")
     count = db.scalar(select(func.count(Appointment.id)).where(Appointment.appointment_date == payload.appointment_date)) or 0
     appt = Appointment(**payload.model_dump(), token=f"A-{100 + count + 1}")
     db.add(appt); db.commit(); db.refresh(appt); return appt
@@ -173,3 +180,4 @@ def send_reminders(day: date = Query(default_factory=date.today), db: Session = 
     if not waiting:
         return {"sent": 0, "message": "There are no waiting patients to remind."}
     return {"sent": waiting, "message": f"Reminder queued for {waiting} waiting patient{'s' if waiting != 1 else ''}."}
+
