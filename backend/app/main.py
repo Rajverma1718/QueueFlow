@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from enum import Enum
 import os
 from typing import Optional
@@ -83,6 +83,12 @@ def get_db():
     try: yield db
     finally: db.close()
 
+def as_datetime(day: date, value: str) -> datetime:
+    try:
+        return datetime.combine(day, time.fromisoformat(value))
+    except ValueError:
+        raise HTTPException(400, "Time must use HH:MM format")
+
 app = FastAPI(title="QueueFlow API", version="1.0.0")
 origins = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -124,7 +130,8 @@ def update_settings(payload: SettingUpdate, db: Session = Depends(get_db)):
 
 @app.post("/api/blocked-slots", response_model=BlockedSlotOut, status_code=201)
 def create_blocked_slot(payload: BlockedSlotCreate, db: Session = Depends(get_db)):
-    if payload.end_time <= payload.start_time: raise HTTPException(400, "End time must be after start time")
+    if as_datetime(payload.block_date, payload.end_time) <= as_datetime(payload.block_date, payload.start_time):
+        raise HTTPException(400, "End time must be after start time")
     slot = BlockedSlot(**payload.model_dump()); db.add(slot); db.commit(); db.refresh(slot); return slot
 
 @app.get("/api/blocked-slots", response_model=list[BlockedSlotOut])
@@ -137,14 +144,16 @@ def appointments(day: date = Query(default_factory=date.today), db: Session = De
 
 @app.post("/api/appointments", response_model=AppointmentOut, status_code=201)
 def create_appointment(payload: AppointmentCreate, db: Session = Depends(get_db)):
-    if not db.get(Service, payload.service_id): raise HTTPException(404, "Service not found")
-    blocked = db.scalars(select(BlockedSlot).where(
-        BlockedSlot.block_date == payload.appointment_date,
-        BlockedSlot.start_time <= payload.scheduled_time,
-        BlockedSlot.end_time > payload.scheduled_time,
-    )).first()
-    if blocked:
-        raise HTTPException(409, "The selected time is unavailable")
+    service = db.get(Service, payload.service_id)
+    if not service: raise HTTPException(404, "Service not found")
+    appointment_start = as_datetime(payload.appointment_date, payload.scheduled_time)
+    appointment_end = appointment_start + timedelta(minutes=service.duration_minutes)
+    blocked_slots = db.scalars(select(BlockedSlot).where(BlockedSlot.block_date == payload.appointment_date))
+    for blocked in blocked_slots:
+        blocked_start = as_datetime(payload.appointment_date, blocked.start_time)
+        blocked_end = as_datetime(payload.appointment_date, blocked.end_time)
+        if appointment_start < blocked_end and appointment_end > blocked_start:
+            raise HTTPException(409, "The selected time is unavailable")
     count = db.scalar(select(func.count(Appointment.id)).where(Appointment.appointment_date == payload.appointment_date)) or 0
     appt = Appointment(**payload.model_dump(), token=f"A-{100 + count + 1}")
     db.add(appt); db.commit(); db.refresh(appt); return appt
