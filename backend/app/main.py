@@ -5,7 +5,7 @@ from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Date, DateTime, Enum as SAEnum, ForeignKey, Integer, String, Text, create_engine, func, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
@@ -71,7 +71,7 @@ class SettingOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     clinic_name: str; location: str; lead_time_minutes: int
 class SettingUpdate(BaseModel):
-    clinic_name: str; location: str; lead_time_minutes: int
+    clinic_name: str; location: str; lead_time_minutes: int = Field(ge=1)
 class BlockedSlotCreate(BaseModel):
     block_date: date; start_time: str; end_time: str; reason: str; note: Optional[str] = None
 class BlockedSlotOut(BaseModel):
