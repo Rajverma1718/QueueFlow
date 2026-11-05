@@ -85,9 +85,12 @@ def get_db():
 
 def as_datetime(day: date, value: str) -> datetime:
     try:
-        return datetime.combine(day, time.fromisoformat(value))
+        parsed_time = time.fromisoformat(value)
     except ValueError:
         raise HTTPException(400, "Time must use HH:MM format")
+    if len(value) != 5 or value[2] != ":":
+        raise HTTPException(400, "Time must use HH:MM format")
+    return datetime.combine(day, parsed_time)
 
 app = FastAPI(title="QueueFlow API", version="1.0.0")
 origins = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
