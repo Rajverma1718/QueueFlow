@@ -157,6 +157,12 @@ def create_appointment(payload: AppointmentCreate, db: Session = Depends(get_db)
         blocked_end = as_datetime(payload.appointment_date, blocked.end_time)
         if appointment_start < blocked_end and appointment_end > blocked_start:
             raise HTTPException(409, "The selected time is unavailable")
+    existing_appointments = db.scalars(select(Appointment).where(Appointment.appointment_date == payload.appointment_date))
+    for existing in existing_appointments:
+        existing_start = as_datetime(payload.appointment_date, existing.scheduled_time)
+        existing_end = existing_start + timedelta(minutes=existing.service.duration_minutes)
+        if appointment_start < existing_end and appointment_end > existing_start:
+            raise HTTPException(409, "The selected time overlaps another appointment")
     count = db.scalar(select(func.count(Appointment.id)).where(Appointment.appointment_date == payload.appointment_date)) or 0
     appt = Appointment(**payload.model_dump(), token=f"A-{100 + count + 1}")
     db.add(appt); db.commit(); db.refresh(appt); return appt
