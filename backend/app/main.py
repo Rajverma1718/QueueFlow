@@ -180,9 +180,13 @@ def update_status(appointment_id: int, payload: StatusUpdate, db: Session = Depe
 def dashboard(day: date = Query(default_factory=date.today), db: Session = Depends(get_db)):
     rows = db.scalars(select(Appointment).where(Appointment.appointment_date == day)).all()
     waiting = [a for a in rows if a.status in [AppointmentStatus.checked_in, AppointmentStatus.called]]
+    queued = sorted(
+        (a for a in rows if a.status == AppointmentStatus.checked_in),
+        key=lambda a: (a.priority != Priority.priority, a.checked_in_at or datetime.max, a.scheduled_time),
+    )
     active = next((a for a in rows if a.status == AppointmentStatus.serving), None)
     served = [a for a in rows if a.status == AppointmentStatus.completed]
-    return {"date": day, "total": len(rows), "waiting": len(waiting), "served": len(served), "average_wait": 12, "active": AppointmentOut.model_validate(active) if active else None, "next": AppointmentOut.model_validate(waiting[0]) if waiting else None}
+    return {"date": day, "total": len(rows), "waiting": len(waiting), "served": len(served), "average_wait": 12, "active": AppointmentOut.model_validate(active) if active else None, "next": AppointmentOut.model_validate(queued[0]) if queued else None}
 
 @app.post("/api/queue/call-next", response_model=AppointmentOut)
 def call_next(day: date = Query(default_factory=date.today), db: Session = Depends(get_db)):
